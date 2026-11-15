@@ -81,7 +81,7 @@ const DOW=["CN","T2","T3","T4","T5","T6","T7"];
 let S={tasks:[],notes:[],focus:{},snz:0};
 try{const r=localStorage.getItem(K);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
 const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
-let tab="today",selDay=ymd(new Date()),calM=new Date(),q="",ft=null,fl=0,fid="",fdone=0,editId="";
+let tab="today",selDay=ymd(new Date()),calM=new Date(),q="",editId="";
 const TABS=[["today","Hôm nay"],["all","Sắp tới"],["cal","Lịch"],["notes","Ghi chú"],["stats","Thống kê"]];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const dueD=t=>t.due?new Date(t.due):null;
@@ -159,9 +159,7 @@ function liveTick(n){const ids=S.tasks.filter(t=>!t.done&&t.end&&n>=new Date(t.d
  document.querySelectorAll(".lv").forEach(e=>{const a=+e.dataset.a0,b=+e.dataset.b0;e.textContent=fmtL(b-n);const p=e.nextElementSibling&&e.nextElementSibling.firstElementChild;if(p)p.style.width=Math.min(100,(n-a)/(b-a)*100)+"%"});
  document.querySelectorAll(".stl").forEach(e=>{e.textContent="Chưa xác nhận bắt đầu · đang trễ "+Math.max(0,Math.floor((n-+e.dataset.a0)/60000))+" phút"});
  document.querySelectorAll(".cd").forEach(e=>{e.textContent=cdText(+e.dataset.d,+e.dataset.e,n)})}
-function tick(){const n=Date.now();let any=false;liveTick(n);fwTick(n);any=alertTick(n);
-
- if(ft){const left=Math.max(0,Math.round((ft-n)/1000));if(left===0){ft=null;const k=today();S.focus[k]=(S.focus[k]||0)+fl;save();fdone=Date.now();render()}else{const e=$("#tm");if(e)e.textContent=pad(Math.floor(left/60))+":"+pad(left%60)}}}
+function tick(){const n=Date.now();let any=false;liveTick(n);fwTick(n);any=alertTick(n)}
 setInterval(tick,1000);
 
 
@@ -173,7 +171,7 @@ function row(t){if(editId===t.id)return editRow(t);const late=!t.done&&t.due&&ne
  return`<div class="task ${t.done?"done":""} p${t.pri}" data-id="${t.id}"><button class="ck" data-a="tg" aria-label="Đánh dấu xong">${t.done?"✓":""}</button>
  <div><div class="tt">${esc(t.title)}</div><div class="meta">${t.due?`<button class="lnk ${late?"late":""}" data-a="edit" title="Bấm để sửa ngày giờ">${late?"Quá hạn · ":""}${when(t)} ✎</button>`:`<button class="lnk" data-a="edit">Chưa có hạn · đặt hạn ✎</button>`}${t.due&&!t.done?`<span class="cd" data-d="${new Date(t.due).getTime()}" data-e="${t.end?new Date(t.end).getTime():0}">${cdText(new Date(t.due).getTime(),t.end?new Date(t.end).getTime():0,Date.now())}</span>`:""}${t.due&&(t.go||t.back)?`<span>🚗 ${hm(ds(t))}–${hm(de(t))} (đi ${t.go|0}p · về ${t.back|0}p)</span>`:""}${!t.done&&t.due&&t.end&&new Date(t.due)>new Date()&&nowFree()?`<button class="btn ghost sm" data-a="fw">▶ Làm ngay</button>`:""}${t.worked?`<span>đã làm trước ${t.worked}p</span>`:""}${t.late?`<span class="late">trễ ${t.late}p</span>`:""}${t.rep?`<span>↻ ${t.rep==="daily"?"mỗi ngày":"mỗi tuần"}</span>`:""}${t.remind?`<span>nhắc trước ${t.remind}p</span>`:""}${t.snz?`<span class="snz">hoãn ${t.snz} lần</span>`:""}</div>
  ${t.snz>=3&&!t.done?`<div class="meta"><span class="snz">Việc này bị hoãn nhiều lần. Thử chỉ làm 5 phút đầu thôi.</span></div>`:""}</div>
- <div class="acts">${!t.done?`<button class="btn ghost sm" data-a="f" title="Tập trung làm việc này">▶ 25p</button><button class="btn ghost sm" data-a="p1" title="Dời sang ngày mai">+1 ngày</button>`:""}<button class="btn ghost sm" data-a="del" aria-label="Xóa">✕</button></div></div>`}
+ <div class="acts">${!t.done?`<button class="btn ghost sm" data-a="p1" title="Dời sang ngày mai">+1 ngày</button>`:""}<button class="btn ghost sm" data-a="del" aria-label="Xóa">✕</button></div></div>`}
 function cdText(d,e,n){const ms=d-n;if(ms<=0){if(e&&n<e)return"đang diễn ra, còn "+fmtL(e-n);return e?"đã kết thúc":"đã qua giờ"}
  const s=Math.floor(ms/1000),dd=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
  return "còn "+(dd?dd+" ngày "+h+" giờ "+m+" phút":h?h+" giờ "+pad(m)+" phút "+pad(s%60)+" giây":m+" phút "+pad(s%60)+" giây")}
@@ -194,7 +192,6 @@ function vToday(){const k=today(),now=new Date(),T=S.tasks,open=T.filter(t=>!t.d
  </div>
  <div class="row" style="align-items:center"><select id="qtr" aria-label="Mẫu đi lại">${trOpts()}</select><input type="number" id="qg" min="0" max="600" step="5" inputmode="numeric" placeholder="🚗 Đi (phút)" aria-label="Thời gian đi"><input type="number" id="qb" min="0" max="600" step="5" inputmode="numeric" placeholder="Về (phút)" aria-label="Thời gian về"></div><div class="row"><button class="btn ghost sm" data-a="trsave">Lưu thành mẫu</button><button class="btn ghost sm" data-a="trdel">Xóa mẫu đang chọn</button></div>
  <div class="row"><button class="btn" data-a="add">Thêm việc</button></div></div>`;
- h+=`<div class="card"><h2>Tập trung 25 phút</h2><div class="timer" id="tm">${ft?"":"25:00"}</div><div class="row">${ft?`<button class="btn ghost" data-a="fstop">Dừng</button>`:`<select id="fs" aria-label="Chọn việc"><option value="">Việc bất kỳ</option>${open.map(t=>`<option value="${t.id}" ${t.id===fid?"selected":""}>${esc(t.title)}</option>`).join("")}</select><button class="btn" data-a="fgo">Bắt đầu</button>`}</div><p class="tip">Hôm nay đã tập trung ${S.focus[k]||0} phút.${!ft&&Date.now()-fdone<3e5?" Vừa xong 25 phút, nghỉ 5 phút nhé!":""}</p></div>`;
  return h+list("Quá hạn",over,"Không có việc nào quá hạn. Tốt lắm.")+list("Hôm nay",td,"Hôm nay chưa có việc nào sắp tới.")+list("Chưa có hạn",inbox,"Hộp việc trống.")+(dn.length?list("Đã xong hôm nay",dn,""):"")}
 
 function vAll(){const open=S.tasks.filter(t=>!t.done&&t.due&&new Date(t.due)>=new Date()).sort(byDue),g={};open.forEach(t=>(g[dayOf(t)]=g[dayOf(t)]||[]).push(t));
@@ -261,27 +258,17 @@ function vNotes(){const L=S.notes.filter(n=>n.t.toLowerCase().includes(q.toLower
 
 function lateCard(){const lim=Date.now()-7*864e5,L=S.tasks.filter(t=>t.startedAt&&t.startedAt>lim).sort((a,b)=>b.startedAt-a.startedAt),late=L.filter(t=>t.late>0),sum=late.reduce((x,t)=>x+t.late,0);
  return`<div class="card"><h2>Bắt đầu đúng giờ (7 ngày)</h2>${L.length?`<div class="sub">Đúng giờ ${L.length-late.length}/${L.length} việc · tổng trễ ${sum} phút</div>`+late.slice(0,8).map(t=>`<div class="task" style="padding:8px 0"><div class="tt">${esc(t.title)}</div><div class="meta" style="margin:0 0 0 auto"><span>${new Date(t.startedAt).toLocaleDateString("vi-VN")}</span><span class="late">trễ ${t.late}p</span></div></div>`).join(""):`<div class="empty">Chưa có việc nào được xác nhận bắt đầu.</div>`}</div>`}
-function guide(){const G=[
- ["Thêm việc nhanh","Gõ tự nhiên, ví dụ “mai 9h họp nhóm” hoặc “hôm nay 5h-8h học tiếng Anh”, rồi nhấn Enter. Hoặc dùng các ô ngày, giờ bắt đầu, giờ kết thúc, mức ưu tiên và lặp lại. Có ngày mà không chọn giờ thì mặc định 09:00. Việc quá giờ tự chuyển sang mục Quá hạn màu đỏ. Việc có cả giờ bắt đầu và kết thúc sẽ có đồng hồ đếm ngược chạy ở đầu trang khi đến giờ. Việc chỉ có giờ bắt đầu là nhắc nhở, không chiếm thời gian."],
- ["Đi lại 🚗","Nhập số phút đi và số phút về cho việc. Giờ bận tự mở rộng, ví dụ lớp 10:00–16:00, đi 50 phút, về 60 phút thì bận từ 09:10 đến 17:00. Bấm “Lưu thành mẫu” để dùng lại cho các lần sau (ví dụ “Trường”), chọn mẫu trong danh sách để tự điền. Sửa việc cũ thì bấm vào giờ của việc. Khi đến giờ đi hoặc về, đầu trang hiện thẻ đang đi, đang về."],
- ["Xác nhận bắt đầu và trễ giờ","Khi việc đến giờ, bấm “Xác nhận đang làm”. Nếu bấm khi đồng hồ đã chạy 20 phút thì web ghi nhận bạn trễ 20 phút ở việc đó. Lịch sử trễ của 7 ngày gần nhất nằm ở mục “Bắt đầu đúng giờ” trong tab này. Khi xong việc, bấm “Đã hoàn thành”. Nếu bấm trước giờ kết thúc, phần thời gian còn lại của việc đó tự chuyển thành giờ rảnh (thời gian về, nếu có, tính từ lúc bấm)."],
- ["Thời gian trống","Ở tab Lịch, bấm vào một ngày để xem các khoảng trống của ngày đó (từ 3 phút trở lên). Thanh màu xanh là phần còn trống. Hai ô “Khung giờ tính” chọn khoảng giờ bạn muốn tính, mặc định 06:00–22:00. Hôm nay chỉ tính từ giờ hiện tại. Nút “+ Thêm việc” cạnh mỗi khoảng trống sẽ điền sẵn ngày và giờ đó. Tab Hôm nay có dòng “Trống gần nhất”."],
- ["Làm trước trong giờ rảnh","Khi đang rảnh, tab Hôm nay có thẻ để chọn một việc sắp tới và bấm “Làm ngay” (có thể bấm ngay trên từng việc). Số phút bạn làm được trừ vào cuối khoảng giờ của việc đó, ví dụ việc 20:00–22:00, làm trước 27 phút thì còn 20:00–21:33. Hết giờ rảnh (lúc bắt đầu đi hoặc bắt đầu việc kế tiếp), web tự dừng và ghi nhận. Làm đủ thời lượng thì việc được đánh dấu xong. Bấm “Dừng và lưu” để dừng sớm."],
- ["Tập trung 25 phút","Chọn một việc (hoặc việc bất kỳ) rồi bấm Bắt đầu. Đừng nghĩ đến cả việc, chỉ cần bắt đầu 25 phút. Hết 25 phút thì nghỉ 5 phút."],
- ["Nhắc khi đến giờ","Khi một việc đến giờ bắt đầu hoặc giờ kết thúc, web kêu “tít” một tiếng và hiện thông báo giữa màn hình (không nhắc giờ đi và về). Việc chỉ có giờ bắt đầu thì nhắc một lần lúc đó. Lần đầu hãy bấm “Bật thông báo” để có thông báo hệ thống, và chạm vào trang một lần để trình duyệt cho phép phát tiếng. Điện thoại tắt màn hình hoặc thoát trang thì có thể không nhắc đúng giờ; bật “Giữ màn hình sáng” ở tab Thống kê để hạn chế. Mở lại trang trong vòng 30 phút sẽ thấy nhắc bị lỡ."],
- ["Sao lưu dữ liệu","Dữ liệu lưu trong trình duyệt đang dùng. Sao chép đoạn trong ô sao lưu để lưu lại, hoặc dán dữ liệu cũ vào rồi bấm “Khôi phục từ ô trên”."]];
- return`<div class="card"><h2>Hướng dẫn</h2>${G.map(g=>`<details><summary>${g[0]}</summary><p class="tip">${g[1]}</p></details>`).join("")}</div>`}
 
 function vStats(){const T=S.tasks,days=[...Array(7)].map((_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);return d});
  const done=T.filter(t=>t.done&&t.doneAt),per=days.map(d=>done.filter(t=>ymd(new Date(t.doneAt))===ymd(d)).length),mx=Math.max(1,...per);
  let streak=0;for(let i=0;i<60;i++){const d=new Date();d.setDate(d.getDate()-i);const has=done.some(t=>ymd(new Date(t.doneAt))===ymd(d));if(has)streak++;else if(i>0)break;else continue}
  const wd=done.filter(t=>t.due),ont=wd.filter(t=>t.doneAt<=new Date(t.due).getTime()+6e4).length,rate=wd.length?Math.round(ont/wd.length*100):0;
  const hrs={};done.forEach(t=>{const h=new Date(t.doneAt).getHours();hrs[h]=(hrs[h]||0)+1});const best=Object.keys(hrs).sort((a,b)=>hrs[b]-hrs[a])[0];
- const late=T.filter(t=>!t.done&&t.due&&new Date(t.due)<new Date()).length,week=days.reduce((s,d)=>s+(S.focus[ymd(d)]||0),0),stuck=T.filter(t=>!t.done&&t.snz>=2).length;
+ const late=T.filter(t=>!t.done&&t.due&&new Date(t.due)<new Date()).length,stuck=T.filter(t=>!t.done&&t.snz>=2).length;
  let tipx=late?`Bạn đang có ${late} việc quá hạn. Xử lý việc nhỏ nhất trước để lấy đà.`:stuck?`Có ${stuck} việc bị hoãn từ 2 lần. Hãy chia nhỏ hoặc xóa bớt.`:`Mọi thứ đang ổn. Giữ nhịp này nhé.`;
- return`<div class="card"><h2>Gợi ý cho bạn</h2><div>${tipx}</div></div><div class="chips"><div class="chip ok"><b>${streak}</b>Ngày liên tiếp có việc xong</div><div class="chip"><b>${wd.length?rate+"%":"–"}</b>Xong đúng hạn</div><div class="chip"><b>${S.snz}</b>Lần bấm hoãn</div><div class="chip"><b>${week}</b>Phút tập trung 7 ngày</div></div>
+ return`<div class="card"><h2>Gợi ý cho bạn</h2><div>${tipx}</div></div><div class="chips"><div class="chip ok"><b>${streak}</b>Ngày liên tiếp có việc xong</div><div class="chip"><b>${wd.length?rate+"%":"–"}</b>Xong đúng hạn</div><div class="chip"><b>${S.snz}</b>Lần bấm hoãn</div></div>
  ${lateCard()}<div class="card"><h2>Việc hoàn thành 7 ngày qua</h2><div class="bars">${per.map((v,i)=>`<div><span style="height:${v/mx*80}px"></span>${v}<br>${DOW[days[i].getDay()]}</div>`).join("")}</div><p class="tip">${best!==undefined?`Bạn hay hoàn thành việc nhất vào khoảng ${best} giờ. Đặt việc khó vào giờ này.`:"Hoàn thành vài việc để thấy giờ làm việc hiệu quả nhất của bạn."}</p></div>
- ${notifCard()}<div class="card"><h2>Sao lưu dữ liệu</h2><textarea id="bk" rows="4">${esc(JSON.stringify(S))}</textarea><div class="row"><button class="btn ghost" data-a="rest">Khôi phục từ ô trên</button></div></div>`+guide()}
+ ${notifCard()}<div class="card"><h2>Sao lưu dữ liệu</h2><textarea id="bk" rows="4">${esc(JSON.stringify(S))}</textarea><div class="row"><button class="btn ghost" data-a="rest">Khôi phục từ ô trên</button></div></div>`}
 
 function render(){const act=document.activeElement&&document.activeElement.id;
  $("#date").textContent=new Date().toLocaleDateString("vi-VN",{weekday:"long",day:"numeric",month:"long"});
@@ -300,9 +287,6 @@ document.addEventListener("click",e=>{const tb=e.target.closest("[data-tab]");if
  else if(a==="tg"&&t){const nw=Date.now(),lv=!t.done&&t.end&&nw>=new Date(t.due)&&nw<new Date(t.end);complete(t);if(lv)fwNote="Đã hoàn thành “"+t.title+"”. Thời gian còn lại của việc này đã chuyển thành giờ rảnh"+(t.back?", tính sau khi về ("+t.back+" phút)":"")+".";render()}
  else if(a==="del"&&t){S.tasks=S.tasks.filter(x=>x!==t);save();render()}
  else if(a==="p1"&&t){const d=new Date(t.due||new Date());d.setDate(d.getDate()+1);t.due=ymd(d)+"T"+(t.due?t.due.slice(11):"09:00");if(t.end){const e=new Date(t.end);e.setDate(e.getDate()+1);t.end=ymd(e)+t.end.slice(10)}t.snz++;S.snz++;t.fired=false;t.alertAt=new Date(t.due).getTime()-t.remind*60000;armAlerts(t);save();render()}
- else if(a==="f"&&t){fid=t.id;tab="today";ft=Date.now()+1500000;fl=25;render()}
- else if(a==="fgo"){fid=$("#fs").value;ft=Date.now()+1500000;fl=25;try{ac=ac||new (window.AudioContext||window.webkitAudioContext)()}catch(x){}render()}
- else if(a==="fstop"){ft=null;render()}
  else if(a==="test"){const n=new Date(),t={id:"x",title:"Thông báo thử",due:ymd(n)+"T"+pad(n.getHours())+":"+pad(n.getMinutes()),end:ymd(n)+"T"+pad(n.getHours())+":"+pad(n.getMinutes())};aToast(t,"e",0);tit()}
  else if(a==="wake"){S.wake=b.checked;save();S.wake?wakeOn():wakeOff()}
  else if(a==="perm"){try{Notification.requestPermission().then(render)}catch(x){render()}}
