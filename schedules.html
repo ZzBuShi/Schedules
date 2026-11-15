@@ -80,7 +80,7 @@ const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const DOW=["CN","T2","T3","T4","T5","T6","T7"];
 let S={tasks:[],notes:[],focus:{},snz:0};
 try{const r=localStorage.getItem(K);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
-const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
+let sy,srvSt="";const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}clearTimeout(sy);sy=setTimeout(()=>{lnSync();syncSrv().then(m=>{if(m)srvSt=m}).catch(()=>{})},1000)};
 let tab="today",selDay=ymd(new Date()),calM=new Date(),q="",editId="";
 const TABS=[["today","Hôm nay"],["all","Sắp tới"],["cal","Lịch"],["notes","Ghi chú"],["stats","Thống kê"]];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
@@ -114,6 +114,36 @@ function toast(t){const el=document.createElement("div");el.className="toast";
  el.onclick=e=>{const a=e.target.dataset.a;if(!a)return;if(a==="done")complete(t);if(a==="snz")snooze(t,10);el.remove();render()};
  $("#toasts").append(el);try{navigator.vibrate&&navigator.vibrate([300,150,300,150,300])}catch(e){}}
 function snooze(t,min){if(t.id==="x")return;t.snz++;S.snz++;t.fired=false;t.alertAt=Date.now()+min*60000;save()}
+/* ---------- bản Android (APK): nhắc bằng báo thức hệ thống, chạy cả khi không có mạng và khi đã đóng ứng dụng ---------- */
+const NATIVE=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()),LN=NATIVE?Capacitor.Plugins.LocalNotifications:null;
+let lnSt="",lnBusy=false,lnAgain=false;
+const nid=s=>{let h=7;for(const c of s)h=(h*31+c.charCodeAt(0))|0;return Math.abs(h)%2147483000+1};
+async function lnSync(){if(!LN)return;if(lnBusy){lnAgain=true;return}lnBusy=true;
+ try{const p=await LN.getPending();if(p.notifications.length)await LN.cancel({notifications:p.notifications});
+  const n=Date.now(),L=[],add=(t,k,at,r)=>L.push({at,n:{id:nid(t.id+k),title:(k==="s"?"⏰ Bắt đầu: ":"⏰ Kết thúc: ")+t.title,body:r,schedule:{at:new Date(at),allowWhileIdle:true},channelId:"nhac"}});
+  S.tasks.forEach(t=>{if(t.done||!t.due)return;const a=new Date(t.due).getTime(),e=t.end?new Date(t.end).getTime():0,r=t.due.slice(11)+(e?"–"+t.end.slice(11):"");
+   if(a>n&&!t.startedAt)add(t,"s",a,r);if(e>n)add(t,"e",e,r)});
+  L.sort((x,y)=>x.at-y.at);if(L.length)await LN.schedule({notifications:L.slice(0,60).map(x=>x.n)})}catch(e){lnSt="Lỗi: "+String(e.message||e).slice(0,80)}
+ lnBusy=false;if(lnAgain){lnAgain=false;lnSync()}}
+async function lnInit(){if(!LN)return;
+ try{let p=await LN.checkPermissions();if(p.display!=="granted")p=await LN.requestPermissions();
+  await LN.createChannel({id:"nhac",name:"Nhắc việc",description:"Nhắc khi đến giờ bắt đầu hoặc kết thúc",importance:5,visibility:1,vibration:true});
+  lnSt=p.display==="granted"?"Đã bật":"Chưa được cấp quyền thông báo (vào Cài đặt điện thoại, mục Ứng dụng, để bật)";await lnSync()}catch(e){lnSt="Lỗi: "+String(e.message||e).slice(0,80)}
+ render()}
+async function lnTest(){try{await LN.schedule({notifications:[{id:1,title:"⏰ Thông báo thử",body:"Nếu thấy dòng này là thông báo đã hoạt động.",schedule:{at:new Date(Date.now()+5000),allowWhileIdle:true},channelId:"nhac"}]});lnSt="Đã hẹn thông báo thử sau 5 giây. Hãy thoát ra màn hình chính để xem."}catch(e){lnSt="Lỗi: "+String(e.message||e).slice(0,80)}render()}
+/* ---------- máy chủ nhắc việc (Web Push, Cloudflare) ---------- */
+const ub64=s=>Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0));
+async function syncSrv(){const u=(S.srv||"").trim().replace(/\/+$/,"");if(!u)return"";
+ try{if(!("Notification"in window)||Notification.permission!=="granted")return"Hãy bấm “Bật thông báo” trước.";
+  const reg=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(!reg)return"Chưa có sw.js (trang cần chạy bằng https).";
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub){const k=(await(await fetch(u+"/key")).json()).key;sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:ub64(k)})}
+  await(await caches.open("cfg")).put(reg.scope+"cfg",new Response(JSON.stringify({srv:u})));
+  const n=Date.now(),items=[];
+  S.tasks.forEach(t=>{if(t.done||!t.due)return;const a=new Date(t.due).getTime(),e=t.end?new Date(t.end).getTime():0,r=t.due.slice(11)+(e?"–"+t.end.slice(11):"");
+   if(a>n&&!t.startedAt)items.push({t:t.title,k:"s",at:a,r,tag:t.id+"s"});if(e>n)items.push({t:t.title,k:"e",at:e,r,tag:t.id+"e"})});
+  await fetch(u+"/sync",{method:"POST",headers:{"content-type":"text/plain"},body:JSON.stringify({sub:sub.toJSON(),items})});
+  return"Đã kết nối. Đã gửi "+items.length+" mốc nhắc lên máy chủ."}catch(e){return"Lỗi: "+String(e.message||e).slice(0,90)}}
 /* ---------- nhắc khi đến giờ bắt đầu / kết thúc (không tính giờ đi, về) ---------- */
 const WIN=30*6e4;
 function armAlerts(t){const n=Date.now(),a=t.due?new Date(t.due).getTime():0,e=t.end?new Date(t.end).getTime():0;t.nS=a&&a<=n?a:0;t.nE=e&&e<=n?e:0}
@@ -124,7 +154,7 @@ function tit(){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)()
 function unlockAudio(){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state!=="running")ac.resume()}catch(e){}}
 ["pointerdown","touchend","keydown","click"].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true}));
 const ICON=(()=>{try{return document.querySelector('link[rel="apple-touch-icon"]').href}catch(e){return""}})();
-async function sysNotify(title,body,tag){try{if(!("Notification"in window)||Notification.permission!=="granted")return;
+async function sysNotify(title,body,tag){try{if(NATIVE)return;if(!("Notification"in window)||Notification.permission!=="granted")return;
  const o={body,tag,renotify:true,requireInteraction:true,vibrate:[250,120,250]};if(ICON){o.icon=ICON;o.badge=ICON}
  let reg=null;try{if(navigator.serviceWorker)reg=await navigator.serviceWorker.getRegistration()}catch(e){}
  if(reg&&reg.showNotification){await reg.showNotification(title,o);return}
@@ -145,14 +175,14 @@ function alertTick(n){let any=false;
   const a=new Date(t.due).getTime(),e=t.end?new Date(t.end).getTime():0,over=e&&n>=e;
   if(n>=a&&t.nS!==a){t.nS=a;if(!over&&!t.startedAt&&n-a<WIN){any=true;aToast(t,"s",n-a)}}
   if(e&&n>=e&&t.nE!==e){t.nE=e;if(n-e<WIN){any=true;aToast(t,"e",n-e)}}});
- if(any){tit();save()}return any}
+ if(any){if(!NATIVE)tit();save()}return any}
 let wl=null;
 async function wakeOn(){try{if(S.wake&&"wakeLock"in navigator&&!wl&&!document.hidden){wl=await navigator.wakeLock.request("screen");wl.addEventListener("release",()=>{wl=null})}}catch(e){wl=null}}
 function wakeOff(){try{if(wl)wl.release()}catch(e){}wl=null}
 if("serviceWorker"in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
-function notifCard(){const np="Notification"in window?Notification.permission:"none";
+function notifCard(){if(NATIVE)return`<div class="card"><h2>Nhắc khi đến giờ</h2><div class="sub">Ứng dụng nhắc bằng báo thức của điện thoại: kêu và hiện thông báo trên cạnh trên màn hình, kể cả khi không có mạng hoặc đã đóng ứng dụng. Không nhắc giờ đi và về.</div><div class="sub" style="margin-top:6px">Trạng thái: <b>${esc(lnSt||"…")}</b></div><div class="row"><button class="btn ghost" data-a="test">Thử thông báo (sau 5 giây)</button></div></div>`;const np="Notification"in window?Notification.permission:"none";
  const st={granted:"đã bật",default:"chưa bật",denied:"đang bị chặn (bật lại trong cài đặt trình duyệt)",none:"trình duyệt này không hỗ trợ (iPhone: hãy thêm trang vào Màn hình chính rồi mở từ đó)"}[np];
- return`<div class="card"><h2>Nhắc khi đến giờ</h2><div class="sub">Khi một việc đến giờ bắt đầu hoặc kết thúc (không tính giờ đi, về), web kêu “tít” một tiếng và hiện thông báo trên màn hình.</div><div class="sub" style="margin-top:6px">Thông báo hệ thống: <b>${st}</b></div><div class="row">${np==="default"?`<button class="btn" data-a="perm">Bật thông báo</button>`:""}<button class="btn ghost" data-a="test">Thử thông báo</button></div><label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" style="width:auto" data-a="wake" ${S.wake?"checked":""}> Giữ màn hình sáng khi đang mở web, để không lỡ nhắc</label></div>`}
+ return`<div class="card"><h2>Nhắc khi đến giờ</h2><div class="sub">Khi một việc đến giờ bắt đầu hoặc kết thúc (không tính giờ đi, về), web kêu “tít” một tiếng và hiện thông báo trên màn hình.</div><div class="sub" style="margin-top:6px">Thông báo hệ thống: <b>${st}</b></div><div class="row">${np==="default"?`<button class="btn" data-a="perm">Bật thông báo</button>`:""}<button class="btn ghost" data-a="test">Thử thông báo</button></div><div class="sub" style="margin-top:10px">Máy chủ nhắc khi đã đóng ứng dụng (Cloudflare)</div><div class="row"><input id="srv" placeholder="https://nhacviec.tên-bạn.workers.dev" value="${esc(S.srv||"")}" aria-label="Địa chỉ máy chủ"><button class="btn" data-a="srv" style="flex:none;min-width:0">Kết nối</button></div><div class="sub">${esc(srvSt)}</div><label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" style="width:auto" data-a="wake" ${S.wake?"checked":""}> Giữ màn hình sáng khi đang mở web, để không lỡ nhắc</label></div>`}
 let lsig="";
 function liveTick(n){const ids=S.tasks.filter(t=>!t.done&&t.end&&n>=new Date(t.due)&&n<new Date(t.end)).map(t=>t.id).join()+"|"+S.tasks.filter(t=>trav(t,n)).map(t=>t.id+trav(t,n)).join();
  if(ids!==lsig){const ae=document.activeElement;if(tab!=="today")lsig=ids;else if(!(ae&&ae.matches&&ae.matches("input,textarea,select"))){lsig=ids;render()}}
@@ -287,7 +317,8 @@ document.addEventListener("click",e=>{const tb=e.target.closest("[data-tab]");if
  else if(a==="tg"&&t){const nw=Date.now(),lv=!t.done&&t.end&&nw>=new Date(t.due)&&nw<new Date(t.end);complete(t);if(lv)fwNote="Đã hoàn thành “"+t.title+"”. Thời gian còn lại của việc này đã chuyển thành giờ rảnh"+(t.back?", tính sau khi về ("+t.back+" phút)":"")+".";render()}
  else if(a==="del"&&t){S.tasks=S.tasks.filter(x=>x!==t);save();render()}
  else if(a==="p1"&&t){const d=new Date(t.due||new Date());d.setDate(d.getDate()+1);t.due=ymd(d)+"T"+(t.due?t.due.slice(11):"09:00");if(t.end){const e=new Date(t.end);e.setDate(e.getDate()+1);t.end=ymd(e)+t.end.slice(10)}t.snz++;S.snz++;t.fired=false;t.alertAt=new Date(t.due).getTime()-t.remind*60000;armAlerts(t);save();render()}
- else if(a==="test"){const n=new Date(),t={id:"x",title:"Thông báo thử",due:ymd(n)+"T"+pad(n.getHours())+":"+pad(n.getMinutes()),end:ymd(n)+"T"+pad(n.getHours())+":"+pad(n.getMinutes())};aToast(t,"e",0);tit()}
+ else if(a==="test"){if(NATIVE){lnTest();return}const n=new Date(),t={id:"x",title:"Thông báo thử",due:ymd(n)+"T"+pad(n.getHours())+":"+pad(n.getMinutes()),end:ymd(n)+"T"+pad(n.getHours())+":"+pad(n.getMinutes())};aToast(t,"e",0);tit()}
+ else if(a==="srv"){S.srv=$("#srv").value.trim();save();srvSt="Đang kết nối…";render();syncSrv().then(m=>{srvSt=m||"Đã xóa địa chỉ máy chủ.";render()})}
  else if(a==="wake"){S.wake=b.checked;save();S.wake?wakeOn():wakeOff()}
  else if(a==="perm"){try{Notification.requestPermission().then(render)}catch(x){render()}}
  else if(a==="add")doAdd();
@@ -313,6 +344,6 @@ document.addEventListener("input",e=>{if(e.target.id==="ns"){q=e.target.value;re
 document.addEventListener("focusout",e=>{if(e.target.dataset&&e.target.dataset.a==="ned"){const n=S.notes.find(x=>x.id===e.target.closest("[data-nid]").dataset.nid);if(n){n.t=e.target.innerText;save()}}});
 document.addEventListener("change",e=>{if(e.target.id==="qtr"){const x=TR()[+e.target.value];$("#qg").value=x?x.go:"";$("#qb").value=x?x.back:""}if(e.target.id==="ws"||e.target.id==="we"){const w=Object.assign({s:6,e:22},S.win);w[e.target.id==="ws"?"s":"e"]=+e.target.value;if(w.s<w.e){S.win=w;save()}render()}});
 $("#theme").onclick=()=>{const r=document.documentElement,d=r.dataset.theme==="dark"||(!r.dataset.theme&&matchMedia("(prefers-color-scheme:dark)").matches);r.dataset.theme=d?"light":"dark"};
-document.addEventListener("visibilitychange",()=>{if(!document.hidden){unlockAudio();wakeOn();tick();render()}});wakeOn();
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){unlockAudio();wakeOn();tick();render();save()}});wakeOn();setTimeout(()=>save(),3000);if(NATIVE)lnInit();
 render();
 </script></body></html>
